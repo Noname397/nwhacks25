@@ -124,55 +124,71 @@ def upload_excel():
     return jsonify({"message": "File received. Processing will happen in a helper function."}), 200
 
 
+
 @schedule_blueprint.route('/next-class', methods=['GET'])
 def next_class():
     """
-    GET schedules/next-class
-    Returns the next upcoming class based on the current time.
-    """
-    classes_list = next_class_helper()
-    if classes_list.startswith("error"):
-        return jsonify({"error": classes_list}), 500
-    elif classes_list:
-        return jsonify(classes_list), 200
-    else:
-        return jsonify({"message": "No classes scheduled for today"}), 200
-
-def next_class_helper():
-    """
-    GET schedules/next-class
-    Returns the next upcoming class based on the current time.
+    GET /schedules/next-class
+    Returns the next upcoming class for today (the first class whose start time >= now),
+    including a 'building_address' field if the building code is found in LOC_ABB.
     """
     try:
-        db = current_app.config['DB']  # Get MongoDB database instance
-        schedule_collection = db["schedules"]  # Access schedule collection
+        db = current_app.config['DB']
+        schedule_collection = db["schedules"]
 
-        # Get today's date and weekday
-        today_date = datetime.now().strftime("%Y-%m-%d")  # YYYY-MM-DD format
-        today_weekday = datetime.now().strftime("%a")  # Short weekday format (Mon, Tue, etc.)
+        now = datetime.now()
+        # e.g. "2025-01-21"
+        today_date = now.strftime("%Y-%m-%d")
+        # e.g. "Mon", "Tue", etc.
+        today_weekday = now.strftime("%a")
 
-        # Query: Find classes where today is within the date range AND today is in the "days" list
-        classes_today = schedule_collection.find_one(
-            {
-                "start_date": {"$lte": today_date},  # start_date <= today
-                "end_date": {"$gte": today_date},  # end_date >= today
-                "days": today_weekday  # Check if today is in the list of scheduled days
-            },
-            sort=[("start_time", 1)]  # Sort by class_time (earliest first)
-        )
+        # Query for schedules happening today
+        query = {
+            "start_date": {"$lte": today_date},
+            "end_date":   {"$gte": today_date},
+            "days":       today_weekday
+        }
+        docs = list(schedule_collection.find(query))
 
-        classes_list = [{
-            "class_name": c["class_name"],
-            "start_time": c["start_time"],
-            "location": c["location"],
-            "address": c["address"],
-            "room": c["room"]
-        } for c in classes_today]
+        # Helper to parse the first part of 'class_time' as a 12-hour time
+        def parse_first_time(time_str):
+            """
+            e.g. "3:00 p.m. - 4:00 p.m." => parse "3:00 p.m." -> a datetime.time object
+            """
+            try:
+                first_part = time_str.split('-')[0].strip()  # "3:00 p.m."
+                # remove extra '.' and uppercase => "3:00 PM"
+                cleaned = first_part.replace('.', '').upper()
+                dt_obj = datetime.strptime(cleaned, "%I:%M %p")
+                return dt_obj.time()
+            except:
+                # If parsing fails, return earliest possible time so it sorts first
+                return datetime.min.time()
 
-        return classes_list
+        # Sort schedules by their start time
+        docs_sorted = sorted(docs, key=lambda d: parse_first_time(d.get("class_time", "")))
+
+        # Find the first class whose start time >= current time
+        now_time = now.time()
+        for doc in docs_sorted:
+            start_t = parse_first_time(doc.get("class_time", ""))
+            if start_t >= now_time:
+                # This is the next upcoming class
+                doc["_id"] = str(doc["_id"])  # Convert ObjectId to string
+
+                # Parse building code from location, e.g. "ESB-Floor 1-Room 1012" => "ESB"
+                location_str = doc.get("location", "")
+                building_code = location_str.split('-')[0].strip()
+                # Lookup the address from LOC_ABB
+                doc["building_address"] = LOC_ABB.get(building_code, "Unknown Address")
+
+                return jsonify(doc), 200
+
+        # If we get here, there's no upcoming class for today
+        return jsonify({"message": "No more classes today"}), 404
 
     except Exception as e:
-        return f"{e}"
+        return jsonify({"error": str(e)}), 500
 
 @schedule_blueprint.route('/today', methods=['GET'])
 def today_schedule():
@@ -181,38 +197,55 @@ def today_schedule():
     Returns all classes scheduled for today, sorted by time.
     """
     try:
-        db = current_app.config['DB']  # Get MongoDB database instance
-        schedule_collection = db["schedules"]  # Access schedule collection
+        db = current_app.config['DB']
+        schedule_collection = db["schedules"]
 
-        # Get today's date and weekday
+        # 1. Determine today's date (YYYY-MM-DD) and weekday (e.g. "Mon")
         today = datetime.now()
-        today_date = today.strftime("%Y-%m-%d")  # YYYY-MM-DD format
-        today_weekday = today.now().strftime("%a")  # Short weekday format (Mon, Tue, etc.)
+        today_date = today.strftime("%Y-%m-%d")      # e.g. "2025-01-21"
+        today_weekday = today.strftime("%a")         # e.g. "Mon", "Tue", etc.
 
-        # Query: Find classes where today is within the date range AND today is in the "days" list
-        classes_today = schedule_collection.find(
-            {
-                "start_date": {"$lte": today_date},  # start_date <= today
-                "end_date": {"$gte": today_date},    # end_date >= today
-                "days": today_weekday                # Check if today is in the list of scheduled days
-            },
-            sort=[("start_time", 1)]  # Sort by class_time (earliest first)
-        )
+        # 2. Query for schedules where:
+        #    start_date <= today_date <= end_date
+        #    AND the 'days' array includes today's weekday
+        query = {
+            "start_date": {"$lte": today_date},
+            "end_date": {"$gte": today_date},
+            "days": today_weekday
+        }
+        docs = list(schedule_collection.find(query))
 
-        classes_list = [{
-            "class_name": c["class_name"],
-            "start_time": c["start_time"],
-            "location": c["location"],
-            "address": c["address"],
-            "room": c["room"]
-        } for c in classes_today]
+        # 3. Sort the resulting documents by the start time in 'class_time' (e.g. "3:00 p.m. - 4:00 p.m.")
+        #    We'll parse only the first segment "3:00 p.m." into a 24-hour datetime, then sort by that.
 
-        if classes_list:
-            return jsonify(classes_list), 200
-        return jsonify({"message": "No classes scheduled for today"}), 404
+        def parse_first_time(time_str):
+            """
+            Given a string like "3:00 p.m. - 4:00 p.m.",
+            parse the first time ("3:00 p.m.") into a datetime.time object for sorting.
+            """
+            try:
+                # Example: "3:00 p.m." -> remove extra periods, uppercase to "3:00 PM"
+                first_part = time_str.split('-')[0].strip()  # "3:00 p.m."
+                cleaned = first_part.replace('.', '').upper()  # "3:00 PM"
+
+                # Parse as 12-hour time
+                dt_obj = datetime.strptime(cleaned, "%I:%M %p")
+                return dt_obj.time()  # We only need a time object for sorting
+            except:
+                # If parsing fails for some reason, return a default or early time
+                return datetime.min.time()
+
+        docs_sorted = sorted(docs, key=lambda d: parse_first_time(d.get("class_time", "")))
+
+        # 4. Convert ObjectIds to strings for JSON
+        for d in docs_sorted:
+            d["_id"] = str(d["_id"])
+
+        return jsonify(docs_sorted), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 def parse_meeting_pattern(chunk, start_date, end_date):
