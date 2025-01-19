@@ -1,7 +1,4 @@
-from flask_sqlalchemy import SQLAlchemy
-
-
-db = SQLAlchemy()
+from backend.app import db
 
 class Schedule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -17,12 +14,6 @@ class Reminder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     reminder_time = db.Column(db.DateTime, nullable=False)
     status = db.Column(db.String(20), default="pending")  # "pending", "done", "snoozed"
-
-# class Achievement(db.Model):
-#     id = db.Column(db.Integer, primary_key=True)
-#     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-#     name = db.Column(db.String(100), nullable=False)
-#     unlocked_at = db.Column(db.DateTime, nullable=False)
 
 class BusTracking(db.Model):
     id = db.Column(db.Integer, primary_key=True)
