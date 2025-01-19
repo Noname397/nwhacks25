@@ -131,8 +131,8 @@ def next_class():
     Returns the next upcoming class based on the current time.
     """
     classes_list = next_class_helper()
-    if classes_list == "error":
-        return jsonify({"error": str(e)}), 500
+    if classes_list.startswith("error"):
+        return jsonify({"error": classes_list}), 500
     elif classes_list:
         return jsonify(classes_list), 200
     else:
@@ -172,7 +172,7 @@ def next_class_helper():
         return classes_list
 
     except Exception as e:
-        return f"error: {e}"
+        return f"{e}"
 
 @schedule_blueprint.route('/today', methods=['GET'])
 def today_schedule():
