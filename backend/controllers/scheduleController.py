@@ -1,10 +1,84 @@
+import re
+
 from flask import Blueprint, request, jsonify, current_app
 from bson import ObjectId
-from models.schedule import schedule_schema, schedules_schema
+from backend.models.schedule import schedule_schema, schedules_schema
 
 import pandas as pd
 from datetime import datetime
 
+LOC_ABB = {
+  "ALRD": "1822 East Mall",
+  "ANSO": "6303 North West Marine Drive",
+  "AERL": "2202 Main Mall",
+  "ACEN": "1871 West Mall",
+  "AUDX": "1924 West Mall",
+  "BINN": "6373 University Boulevard",
+  "BIOL": "6270 University Boulevard",
+  "BUCH": "1866 Main Mall",
+  "BUTO": "1873 East Mall",
+  "CCM": "4145 Wesbrook Mall",
+  "CIRS": "2260 West Mall",
+  "CHAN": "6265 Crescent Road",
+  "GUNN": "2553 Wesbrook Mall",
+  "CHBE": "2360 East Mall V6T 1Z3",
+  "CHEM": "2036 Main Mall",
+  "CEME": "6250 Applied Science Lane",
+  "MINL": "2332 West Mall",
+  "COPP": "2146 Health Sciences Mall",
+  "DLAM": "2033 Main Mall V6T 1Z2",
+  "DSOM": "6361 University Blvd",
+  "KENN": "2136 West Mall",
+  "EOS": "6339 Stores Road",
+  "ESB": "2207 Main Mall",
+  "ESC": "2335 Engineering Road",
+  "FNH": "2205 East Mall",
+  "FSC": "2424 Main Mall",
+  "FORW": "6350 Stores Road",
+  "LASR": "6333 Memorial Road",
+  "FRWO": "6354 Crescent Road",
+  "FRDM": "2177 Wesbrook Mall V6T 1Z3",
+  "GEOG": "1984 West Mall",
+  "CUNN": "2146 East Mall",
+  "HEBB": "2045 East Mall",
+  "HENN": "6224 Agricultural Road",
+  "ANGU": "2053 Main Mall",
+  "DMP": "6245 Agronomy Road V6T 1Z4",
+  "IRSC": "1985 Learners' Walk",
+  "ICCS": "2366 Main Mall",
+  "IBLC": "1961 East Mall V6T 1Z1",
+  "MCDN": "2199 West Mall",
+  "SOWK": "2080 West Mall",
+  "LAX": "2371 Main Mall",
+  "LSK": "6356 Agricultural Road",
+  "PARC": "6049 Nurseries Road",
+  "LSC": "2350 Health Sciences Mall",
+  "MCLD": "2356 Main Mall",
+  "MCML": "2357 Main Mall",
+  "MATH": "1984 Mathematics Road",
+  "MATX": "1986 Mathematics Road",
+  "MEDC": "2176 Health Sciences Mall",
+  "MSL": "2185 East Mall",
+  "MUSC": "6361 Memorial Road",
+  "SCRF": "2125 Main Mall",
+  "AUDI": "6344 Memorial Road",
+  "IRC": "2194 Health Sciences Mall",
+  "PHRM": "2405 Wesbrook Mall",
+  "PONE": "2034 Lower Mall",
+  "PONF": "2008 Lower Mall",
+  "OSB2": "6108 Thunderbird Boulevard",
+  "SRC": "6000 Student Union Blvd",
+  "BRIM": "2355 East Mall",
+  "UCEN": "6331 Crescent Road V6T 1Z1",
+  "TFPB": "6358 University Blvd, V6T 1Z4",
+  "YURT": "3465 Ross Drive",
+  "KPAV": "2211 Wesbrook Mall",
+  "MGYM": "6081 University Blvd",
+  "EDC": "2345 East Mall",
+  "WESB": "6174 University Boulevard",
+  "WMAX": "1933 West Mall",
+  "SWNG": "2175 West Mall V6T 1Z4"
+}
 # Create a Blueprint for schedule routes
 schedule_blueprint = Blueprint('schedules', __name__)
 
@@ -48,6 +122,97 @@ def upload_excel():
     parse_excel_file(file)
 
     return jsonify({"message": "File received. Processing will happen in a helper function."}), 200
+
+
+@schedule_blueprint.route('/next-class', methods=['GET'])
+def next_class():
+    """
+    GET schedules/next-class
+    Returns the next upcoming class based on the current time.
+    """
+    classes_list = next_class_helper()
+    if classes_list == "error":
+        return jsonify({"error": str(e)}), 500
+    elif classes_list:
+        return jsonify(classes_list), 200
+    else:
+        return jsonify({"message": "No classes scheduled for today"}), 200
+
+def next_class_helper():
+    """
+    GET schedules/next-class
+    Returns the next upcoming class based on the current time.
+    """
+    try:
+        db = current_app.config['DB']  # Get MongoDB database instance
+        schedule_collection = db["schedules"]  # Access schedule collection
+
+        # Get today's date and weekday
+        today_date = datetime.now().strftime("%Y-%m-%d")  # YYYY-MM-DD format
+        today_weekday = datetime.now().strftime("%a")  # Short weekday format (Mon, Tue, etc.)
+
+        # Query: Find classes where today is within the date range AND today is in the "days" list
+        classes_today = schedule_collection.find_one(
+            {
+                "start_date": {"$lte": today_date},  # start_date <= today
+                "end_date": {"$gte": today_date},  # end_date >= today
+                "days": today_weekday  # Check if today is in the list of scheduled days
+            },
+            sort=[("class_time", 1)]  # Sort by class_time (earliest first)
+        )
+
+        classes_list = [{
+            "class_name": c["class_name"],
+            "class_time": c["class_time"],
+            "location": c["location"],
+            "address": c["address"],
+            "room": c["room"]
+        } for c in classes_today]
+
+        return classes_list
+
+    except Exception as e:
+        return f"error: {e}"
+
+@schedule_blueprint.route('/today', methods=['GET'])
+def today_schedule():
+    """
+    GET /schedules/today
+    Returns all classes scheduled for today, sorted by time.
+    """
+    try:
+        db = current_app.config['DB']  # Get MongoDB database instance
+        schedule_collection = db["schedules"]  # Access schedule collection
+
+        # Get today's date and weekday
+        today = datetime.now()
+        today_date = today.strftime("%Y-%m-%d")  # YYYY-MM-DD format
+        today_weekday = today.now().strftime("%a")  # Short weekday format (Mon, Tue, etc.)
+
+        # Query: Find classes where today is within the date range AND today is in the "days" list
+        classes_today = schedule_collection.find(
+            {
+                "start_date": {"$lte": today_date},  # start_date <= today
+                "end_date": {"$gte": today_date},    # end_date >= today
+                "days": today_weekday                # Check if today is in the list of scheduled days
+            },
+            sort=[("class_time", 1)]  # Sort by class_time (earliest first)
+        )
+
+        classes_list = [{
+            "class_name": c["class_name"],
+            "class_time": c["class_time"],
+            "location": c["location"],
+            "address": c["address"],
+            "room": c["room"]
+        } for c in classes_today]
+
+        if classes_list:
+            return jsonify(classes_list), 200
+        return jsonify({"message": "No classes scheduled for today"}), 404
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 def parse_meeting_pattern(pattern_chunk):
@@ -153,6 +318,10 @@ def parse_meeting_pattern(chunk, start_date, end_date):
     class_time = parts[2].strip()
     location = parts[3].strip()
 
+    loc_match = re.match(r"([^-]+)-Floor (\d+)-Room (\S+)", location.strip())
+    loc = loc_match.group(1)
+    room = loc_match.group(3)
+    location_noti = f"Room {room} - {loc}"
     # Convert the days string ("Mon Wed Fri") into a list ["Mon","Wed","Fri"]
     days_list = [d.strip() for d in days_str.split()]
 
@@ -162,10 +331,11 @@ def parse_meeting_pattern(chunk, start_date, end_date):
         "end_date": end_date,         # from the 'End Date' column
         "days": days_list,
         "class_time": class_time,
-        "location": location,
-        "room": "",                   # optional, or parse further if needed
+        "location": location_noti,
+        "address": LOC_ABB[loc] + ", Vancouver, BC",
+        "room": room,                   # optional, or parse further if needed
     }
-
+    print(schedule_data)
     return schedule_data
 
 

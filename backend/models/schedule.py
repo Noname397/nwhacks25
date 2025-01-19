@@ -1,5 +1,7 @@
 from marshmallow import Schema, fields, validate
 
+
+
 class ScheduleSchema(Schema):
     """
     Marshmallow schema for a Schedule document/record.
@@ -17,7 +19,8 @@ class ScheduleSchema(Schema):
 
     class_time = fields.String(required=True)
     location = fields.String(required=True)
-    room = fields.String(required=True)
+    address = fields.String(required=True)
+    room = fields.String()
 
 schedule_schema = ScheduleSchema()
 schedules_schema = ScheduleSchema(many=True)
