@@ -1,109 +1,132 @@
-import { StyleSheet, Image, Platform } from 'react-native';
-
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { IconSymbol } from '@/components/ui/IconSymbol';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Button } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import polyline from '@mapbox/polyline';
 
 export default function TabTwoScreen() {
+  const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [originCoords, setOriginCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [destinationCoords, setDestinationCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [mode, setMode] = useState<'driving' | 'walking' | 'transit'>('driving'); // Default mode is driving
+
+  const apiKey = 'AIzaSyCPtlKAn2duBP35t1xGaB2UCYU7AvD4p-o'; // Replace with your Google Maps API key
+  const origin = "5610 Kullahun Drive"; // Address
+  const destination = "UBC Bus Loop"; // Address
+  const bcPlaceCoords = { latitude: 49.2768, longitude: -123.1112 }; // BC Place coordinates
+
+  useEffect(() => {
+    fetchCoordinates(); // Get lat/lng for origin and destination
+  }, []);
+
+  useEffect(() => {
+    if (originCoords && destinationCoords) {
+      fetchRoute(); // Fetch the route once coordinates are available
+    }
+  }, [originCoords, destinationCoords, mode]);
+
+  const fetchCoordinates = async () => {
+    try {
+      // Fetch coordinates for the origin
+      const originResponse = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(origin)}&key=${apiKey}`
+      );
+      const originData = await originResponse.json();
+      if (originData.results.length) {
+        const { lat, lng } = originData.results[0].geometry.location;
+        setOriginCoords({ latitude: lat, longitude: lng });
+      }
+
+      // Fetch coordinates for the destination
+      const destinationResponse = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(destination)}&key=${apiKey}`
+      );
+      const destinationData = await destinationResponse.json();
+      if (destinationData.results.length) {
+        const { lat, lng } = destinationData.results[0].geometry.location;
+        setDestinationCoords({ latitude: lat, longitude: lng });
+      }
+    } catch (error) {
+      console.error('Error fetching coordinates:', error);
+    }
+  };
+
+  const fetchRoute = async () => {
+    try {
+      if (!originCoords || !destinationCoords) return; // Safeguard against null origin or destination
+
+      const originStr = `${originCoords.latitude},${originCoords.longitude}`;
+      const destinationStr = `${destinationCoords.latitude},${destinationCoords.longitude}`;
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${originStr}&destination=${destinationStr}&mode=${mode}&key=${apiKey}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.routes.length) {
+        // Decode the polyline from the API response
+        const points: [number, number][] = polyline.decode(data.routes[0].overview_polyline.points);
+        const coordinates = points.map(([lat, lng]: [number, number]) => ({
+          latitude: lat,
+          longitude: lng,
+        }));
+        setRouteCoordinates(coordinates);
+      }
+    } catch (error) {
+      console.error('Error fetching route:', error);
+    }
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user's current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <View style={styles.container}>
+      {/* Map */}
+      <MapView
+        style={styles.map}
+        initialRegion={{
+          latitude: originCoords ? originCoords.latitude : 49.2676,
+          longitude: originCoords ? originCoords.longitude : -123.2522,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }}
+      >
+        {/* Origin Marker */}
+        {originCoords && (
+          <Marker coordinate={originCoords} title="Origin" description={origin} />
+        )}
+
+        {/* Destination Marker */}
+        {destinationCoords && (
+          <Marker coordinate={destinationCoords} title="Destination" description={destination} />
+        )}
+
+        {/* BC Place Marker */}
+        <Marker coordinate={bcPlaceCoords} title="BC Place" description="Stadium in Vancouver" />
+
+        {/* Route Polyline */}
+        {routeCoordinates.length > 0 && (
+          <Polyline coordinates={routeCoordinates} strokeWidth={4} strokeColor="blue" />
+        )}
+      </MapView>
+
+      {/* Mode Buttons */}
+      <View style={styles.buttons}>
+        <Button title="Driving" onPress={() => setMode('driving')} />
+        <Button title="Walking" onPress={() => setMode('walking')} />
+        <Button title="Transit" onPress={() => setMode('transit')} />
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
   },
-  titleContainer: {
+  map: {
+    width: '100%',
+    height: '80%',
+  },
+  buttons: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-around',
+    padding: 10,
   },
 });
