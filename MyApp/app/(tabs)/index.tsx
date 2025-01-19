@@ -1,6 +1,5 @@
 import React from "react";
 import { View, Text, StyleSheet, Image } from "react-native";
-import { CountdownCircleTimer } from "react-native-countdown-circle-timer";
 
 const App = () => {
   return (
