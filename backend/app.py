@@ -1,11 +1,26 @@
 from flask import Flask
-from map import map_endpoints
-app = Flask(__name__)
+from pymongo import MongoClient
+from controllers.scheduleController import schedule_blueprint
+from controllers.mapController import map_endpoints  # Import map_endpoints
+def create_app():
+    app = Flask(__name__)
 
-app.register_blueprint(map_endpoints, url_prefix="/map")
-@app.route('/')
-def home():
-    return "Hello, Flask!"
+    # ---------------------------------------------------------------
+    # 1. MongoDB Connection (moved from model.py to app.py)
+    # ---------------------------------------------------------------
+    MONGO_URI = "mongodb+srv://jackydo1974:JanDongHackCamp113@nwhack.9mwg2.mongodb.net/test"
+    client = MongoClient(MONGO_URI)
+    db = client.my_database
+    app.config['DB'] = db  # store db in app config (or globally)
 
-if __name__ == '__main__':
-    app.run(debug=True)
+    # ---------------------------------------------------------------
+    # 2. Register controllers/blueprints here (example only)
+    # ---------------------------------------------------------------
+    app.register_blueprint(schedule_blueprint, url_prefix='/schedules')
+    app.register_blueprint(map_endpoints, url_prefix='/map')
+    return app
+
+
+if __name__ == "__main__":
+    application = create_app()
+    application.run(debug=True, port=5000)
