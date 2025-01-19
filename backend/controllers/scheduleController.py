@@ -158,12 +158,12 @@ def next_class_helper():
                 "end_date": {"$gte": today_date},  # end_date >= today
                 "days": today_weekday  # Check if today is in the list of scheduled days
             },
-            sort=[("class_time", 1)]  # Sort by class_time (earliest first)
+            sort=[("start_time", 1)]  # Sort by class_time (earliest first)
         )
 
         classes_list = [{
             "class_name": c["class_name"],
-            "class_time": c["class_time"],
+            "start_time": c["start_time"],
             "location": c["location"],
             "address": c["address"],
             "room": c["room"]
@@ -196,12 +196,12 @@ def today_schedule():
                 "end_date": {"$gte": today_date},    # end_date >= today
                 "days": today_weekday                # Check if today is in the list of scheduled days
             },
-            sort=[("class_time", 1)]  # Sort by class_time (earliest first)
+            sort=[("start_time", 1)]  # Sort by class_time (earliest first)
         )
 
         classes_list = [{
             "class_name": c["class_name"],
-            "class_time": c["class_time"],
+            "start_time": c["start_time"],
             "location": c["location"],
             "address": c["address"],
             "room": c["room"]
@@ -215,126 +215,56 @@ def today_schedule():
         return jsonify({"error": str(e)}), 500
 
 
-def parse_meeting_pattern(pattern_chunk):
-    """
-    Given one chunk of meeting pattern text, e.g.:
-      "2025-01-06 - 2025-02-14 | Mon Wed Fri | 3:00 p.m. - 4:00 p.m. | ESB-Floor 1-Room 1012"
-    parse out the individual fields (start_date, end_date, days, class_time, location, room).
-    
-    Returns a dict that can be inserted into the Schedule schema.
-    """
-
-    # Example of a chunk:
-    # "2025-01-06 - 2025-02-14 | Mon Wed Fri | 3:00 p.m. - 4:00 p.m. | ESB-Floor 1-Room 1012"
-    parts = pattern_chunk.split('|')
-    # Expecting 4 parts: date-range, days, time, location/room
-    # e.g. parts[0] -> "2025-01-06 - 2025-02-14"
-    #      parts[1] -> "Mon Wed Fri"
-    #      parts[2] -> "3:00 p.m. - 4:00 p.m."
-    #      parts[3] -> "ESB-Floor 1-Room 1012"
-
-    if len(parts) < 4:
-        # If the format doesn't match, handle gracefully
-        return None
-
-    date_range = parts[0].strip()
-    days_str = parts[1].strip()
-    class_time = parts[2].strip()
-    location_room = parts[3].strip()
-
-    # Parse the date range: "2025-01-06 - 2025-02-14"
-    start_str, end_str = date_range.split('-')
-    start_date_str = start_str.strip()
-    end_date_str = end_str.strip()
-
-    # Convert them to YYYY-MM-DD or DateTime objects
-    # (You can handle errors or different formats as needed)
-    # For example, "2025-01-06"
-    try:
-        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-        end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-    except ValueError:
-        # If the date format is different (like "1/6/2025"), adjust accordingly
-        # We'll try an alternate parse
-        try:
-            start_date = datetime.strptime(start_date_str, '%m/%d/%Y')
-            end_date = datetime.strptime(end_date_str, '%m/%d/%Y')
-        except ValueError:
-            # fallback if all parsing fails
-            return None
-
-    # Days might be "Mon Wed Fri" => we want ["Mon", "Wed", "Fri"]
-    days_list = [d.strip() for d in days_str.split()]
-
-    # If your schema expects an array of days, this is good.
-    # If your schema expects a single string, you'd do `days = days_str` instead.
-
-    # If you want to parse location vs. room, you can try:
-    # Example: "ESB-Floor 1-Room 1012" => location="ESB-Floor 1", room="Room 1012"
-    # For simplicity, store entire string in 'location' or do minimal splitting.
-    # We'll do a minimal approach here:
-    location = location_room
-    room = ""
-
-    schedule_data = {
-        "start_date": start_date.isoformat(),  # or store the datetime object directly
-        "end_date": end_date.isoformat(),
-        "days": days_list,             # or a string if your schema wants a string
-        "class_time": class_time,
-        "location": location,
-        "room": room
-    }
-
-    return schedule_data
-
-
 def parse_meeting_pattern(chunk, start_date, end_date):
     """
-    Given a single chunk of text from the 'Meeting Patterns' column, e.g.:
-      "2025-01-06 - 2025-02-14 | Mon Wed Fri | 3:00 p.m. - 4:00 p.m. | ESB-Floor 1-Room 1012"
-    we IGNORE the first piece (the date range), because we already have a
-    'Start Date' and 'End Date' from separate columns.
-
-    Instead we parse:
-      - 2nd piece -> days (string like "Mon Wed Fri", which we convert to ["Mon","Wed","Fri"])
-      - 3rd piece -> class_time (e.g. "3:00 p.m. - 4:00 p.m.")
-      - 4th piece -> location (e.g. "ESB-Floor 1-Room 1012")
-
-    We then build a dictionary with start_date, end_date, days, class_time, location, room, etc.
+    Parses a single meeting pattern into structured data.
     """
-
     parts = chunk.split('|')
-    # Example:
-    # parts[0] => "2025-01-06 - 2025-02-14"  (ignored)
-    # parts[1] => "Mon Wed Fri"
-    # parts[2] => "3:00 p.m. - 4:00 p.m."
-    # parts[3] => "ESB-Floor 1-Room 1012"
-
-    # We need at least 4 parts; if fewer, skip this chunk
     if len(parts) < 4:
-        return None
+        return None  # Skip invalid rows
 
     days_str = parts[1].strip()
     class_time = parts[2].strip()
     location = parts[3].strip()
 
+    # Extract location and room safely
     loc_match = re.match(r"([^-]+)-Floor (\d+)-Room (\S+)", location.strip())
-    loc = loc_match.group(1)
-    room = loc_match.group(3)
-    location_noti = f"Room {room} - {loc}"
-    # Convert the days string ("Mon Wed Fri") into a list ["Mon","Wed","Fri"]
+    if loc_match:
+        loc = loc_match.group(1)
+        room = loc_match.group(3)
+        location_noti = f"Room {room} - {loc}"
+    else:
+        loc = location  # Fallback if regex fails
+        room = "Unknown"
+        location_noti = location  # Use full location as fallback
+
     days_list = [d.strip() for d in days_str.split()]
 
-    # Build the schedule data dict
+    try:
+        # Extract start and end time
+        start_time_str, end_time_str = class_time.split('-')
+        start_time_str = re.sub(r'\.', '', start_time_str.strip()).upper()
+        end_time_str = re.sub(r'\.', '', end_time_str.strip()).upper()
+
+        start_time_obj = datetime.strptime(start_time_str, "%I:%M %p")
+        end_time_obj = datetime.strptime(end_time_str, "%I:%M %p")
+
+        formatted_start_time = start_time_obj.strftime("%H:%M")
+        formatted_end_time = end_time_obj.strftime("%H:%M")
+    except ValueError:
+        return None  # Skip invalid time formats
+
     schedule_data = {
-        "start_date": start_date,     # from the 'Start Date' column
-        "end_date": end_date,         # from the 'End Date' column
+        "start_date": start_date,
+        "end_date": end_date,
         "days": days_list,
-        "class_time": class_time,
+        "start_time": formatted_start_time,
+        "end_time": formatted_end_time,
         "location": location_noti,
-        "address": LOC_ABB[loc] + ", Vancouver, BC",
-        "room": room,                   # optional, or parse further if needed
+        "address": LOC_ABB.get(loc, "Unknown Address"),
+        "room": room,
     }
+
     print(schedule_data)
     return schedule_data
 

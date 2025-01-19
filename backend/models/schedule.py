@@ -15,9 +15,10 @@ class ScheduleSchema(Schema):
         fields.String(),
         required=True,
         validate=validate.ContainsOnly(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
-    )
+    ),
 
-    class_time = fields.String(required=True)
+    start_date = fields.DateTime(format='%H-%M', required=True),
+    end_date = fields.DateTime(required=True, format='%H-%M')
     location = fields.String(required=True)
     address = fields.String(required=True)
     room = fields.String()
