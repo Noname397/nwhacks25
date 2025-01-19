@@ -4,6 +4,7 @@ from controllers.scheduleController import schedule_blueprint
 from controllers.mapController import map_endpoints  # Import map_endpoints
 from flask_cors import CORS
 import os
+from flask_ngrok import run_with_ngrok
   # Allow all origins, or specify your frontend URL
 
 from dotenv import load_dotenv
@@ -14,6 +15,7 @@ load_dotenv()
 
 def create_app():
     app = Flask(__name__)
+    run_with_ngrok(app)
     CORS(app)
 
     # ---------------------------------------------------------------
@@ -34,4 +36,4 @@ def create_app():
 
 if __name__ == "__main__":
     application = create_app()
-    application.run(debug=True, port=5000)
+    application.run()
