@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 import requests
+import re
 
 # Create a Blueprint for map endpoints
 map_endpoints = Blueprint('map_endpoints', __name__)
@@ -169,22 +170,6 @@ def get_polyline(mode):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def format_shortened_steps(mode, steps):
-    if mode == "transit":
-        steps_info = []
-        for step in steps:
-            if step["travel_mode"] == "TRANSIT":
-                transit_details = step.get("transit_details", {})
-                steps_info.append(transit_details.get("line", {}).get("short_name", ""))
-            elif step["travel_mode"] == "WALKING":
-                steps_info.append("walking")
-        return steps_info
-
-    elif mode in ["walking", "driving"]:
-        if steps:
-            return steps[0].get("html_instructions", "")
-    return []
-
 
 @map_endpoints.route("/my-location", methods=["POST"])
 def get_my_location():
@@ -204,3 +189,56 @@ def get_my_location():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+def get_bold_tags_content(input_string):
+    # Extract the first, second, and third <b> tag content
+    matches = re.findall(r'<b>(.*?)</b>', input_string)
+    direction = matches[0] if len(matches) > 0 else None
+    from_road = matches[1] if len(matches) > 1 else None
+    to_road = matches[2] if len(matches) > 2 else None
+    return {
+        "direction": direction,
+        "from_road": from_road,
+        "to_road": to_road
+    }
+
+def get_first_with_three_bold(input_string):
+    # Match substrings with exactly three <b>...</b> tags
+    matches = re.findall(r'(?:<b>.*?</b>.*?){3}', input_string)
+    return matches[0] if matches else None
+
+def format_shortened_steps(mode, steps):
+    if mode == "transit":
+        summary = []
+    
+        for step in steps:
+            travel_mode = step.get("travel_mode", "").upper()
+            if travel_mode == "WALKING":
+                # Add walking duration
+                duration_text = step.get("duration", {}).get("text", "")
+                summary.append(f"walking: {duration_text}")
+            elif travel_mode == "TRANSIT":
+                # Add transit details
+                transit_details = step.get("transit_details", {})
+                line_info = transit_details.get("line", {})
+                # Determine if short_name or name is used
+                short_name = line_info.get("short_name")
+                name = line_info.get("name", "unknown line")
+                
+                if short_name:
+                    line_name = f"bus ({short_name})"
+                else:
+                    line_name = f"train ({name})"
+                
+                duration_text = step.get("duration", {}).get("text", "")
+                summary.append(f"{line_name}: {duration_text}")
+        return summary
+
+    elif mode in ["driving", "walking"]:
+        for step in steps:
+            # Get the first step with three bold tags
+            html_instructions = step.get("html_instructions", "")
+            first_with_three_bold = get_first_with_three_bold(html_instructions)
+            if first_with_three_bold:
+                return get_bold_tags_content(first_with_three_bold)
+    return []
