@@ -204,3 +204,7 @@ def get_my_location():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@map_endpoints.route("/haha")
+def get_haha():
+    return jsonify({"message": "haha"}), 200
