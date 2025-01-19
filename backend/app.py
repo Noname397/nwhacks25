@@ -1,6 +1,7 @@
 from flask import Flask
 from pymongo import MongoClient
-
+from controllers.scheduleController import schedule_blueprint
+from controllers.mapController import map_endpoints  # Import map_endpoints
 def create_app():
     app = Flask(__name__)
 
@@ -15,9 +16,8 @@ def create_app():
     # ---------------------------------------------------------------
     # 2. Register controllers/blueprints here (example only)
     # ---------------------------------------------------------------
-    from controllers.scheduleController import schedule_blueprint
     app.register_blueprint(schedule_blueprint, url_prefix='/schedules')
-
+    app.register_blueprint(map_endpoints, url_prefix='/map')
     return app
 
 
